@@ -55,7 +55,14 @@ def main():
             if query.lower() == 'quit':
                 break
             
-            results = search_engine.search(query, top_k=5)
+            # Add debug functionality
+            if query.lower().startswith("debug:"):
+                text = query[6:].strip()
+                search_engine.debug_text_presence(text)
+                continue
+            
+            # Regular search
+            results = search_engine.hybrid_search(query, top_k=16)
             
             if not results:
                 print("No matching verses found.")
