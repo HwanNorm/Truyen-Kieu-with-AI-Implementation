@@ -53,3 +53,38 @@ class KieuSearchEngine:
                 ))
         
         return results
+    
+    def debug_text_presence(self, text_to_find):
+        """Debug helper to find specific text in corpus"""
+        for i, verse in enumerate(self.verses):
+            if text_to_find in verse:
+                print(f"Found in verse {i+1}: {verse}")
+                tokens = self.preprocessor.preprocess_verse(verse)
+                print(f"Tokenized as: {tokens}")
+                # Check if tokens are in vocabulary
+                for token in tokens:
+                    if token in self.vectorizer.vocabulary:
+                        print(f"Token '{token}' found in vocabulary")
+                    else:
+                        print(f"Token '{token}' NOT in vocabulary")
+
+    def hybrid_search(self, query: str, top_k: int = 10) -> List[Tuple[int, str, float]]:
+        """Combines vector-based search with string-based search"""
+        # Get vector-based results
+        vector_results = set(idx for idx, _, _ in self.search(query, top_k=top_k))
+        
+        # Add string-based matches
+        string_results = []
+        query_lower = query.lower()
+        
+        for idx, verse in enumerate(self.verses):
+            if query_lower in verse.lower() and idx not in vector_results:
+                # Add to results with a high score
+                string_results.append((idx, verse, 0.8))  # Slightly lower than top vector matches
+        
+        # Combine both types of results
+        all_results = [(idx, verse, score) for idx, verse, score in self.search(query, top_k=top_k)]
+        all_results.extend(string_results)
+        
+        # Sort by score and limit to top_k
+        return sorted(all_results, key=lambda x: -x[2])[:top_k]
