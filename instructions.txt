@@ -1,0 +1,9 @@
+python -m src.run_exact_classifier
+
+python app.py --data data/truyen_kieu.txt --stopwords data/vietnamese_stopwords.txt --model models/tfidf_model.pkl --mode train
+
+python app.py --data data/truyen_kieu.txt --stopwords data/vietnamese_stopwords.txt --model models/tfidf_model.pkl --mode search
+
+#New 
+
+python app.py --data data/truyen_kieu.txt --stopwords data/vietnamese_stopwords.txt --tfidf-model models/tfidf_model.pkl --mode train-search
