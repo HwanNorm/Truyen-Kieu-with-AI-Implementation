@@ -4,9 +4,9 @@ from typing import List, Dict, Tuple, Optional
 import re
 
 class KieuVerseGenerator:
-    """Generator for new verses in the style of Truyện Kiều"""
+    """Generator for new verses in the style of Truyện Kiều with enhanced poetic structure"""
     
-    def __init__(self, model_path: str, model_type: str = 'lstm'):
+    def __init__(self, model_path: str, model_type: str = 'ngram'):
         """
         Initialize the verse generator with a trained language model
         
@@ -24,6 +24,38 @@ class KieuVerseGenerator:
             self.model = TransformerKieuModel(model_path)
         else:
             raise ValueError(f"Unsupported model type: {model_type}")
+            
+        # Initialize Vietnamese linguistic resources
+        self._init_vietnamese_resources()
+    
+    def _init_vietnamese_resources(self):
+        """Initialize resources for Vietnamese poetry analysis"""
+        # Vietnamese tone marks for analysis
+        self.tone_marks = {
+            'level': ['a', 'ă', 'â', 'e', 'ê', 'i', 'o', 'ô', 'ơ', 'u', 'ư', 'y'],
+            'falling': ['à', 'ằ', 'ầ', 'è', 'ề', 'ì', 'ò', 'ồ', 'ờ', 'ù', 'ừ', 'ỳ'],
+            'rising': ['á', 'ắ', 'ấ', 'é', 'ế', 'í', 'ó', 'ố', 'ớ', 'ú', 'ứ', 'ý'],
+            'question': ['ả', 'ẳ', 'ẩ', 'ẻ', 'ể', 'ỉ', 'ỏ', 'ổ', 'ở', 'ủ', 'ử', 'ỷ'],
+            'tumbling': ['ã', 'ẵ', 'ẫ', 'ẽ', 'ễ', 'ĩ', 'õ', 'ỗ', 'ỡ', 'ũ', 'ữ', 'ỹ'],
+            'heavy': ['ạ', 'ặ', 'ậ', 'ẹ', 'ệ', 'ị', 'ọ', 'ộ', 'ợ', 'ụ', 'ự', 'ỵ']
+        }
+        
+        # Group tones for poetry analysis
+        self.tone_groups = {
+            'flat': ['level', 'falling'],  # bằng
+            'sharp': ['rising', 'question', 'tumbling', 'heavy']  # trắc
+        }
+        
+        # Common ending words for Truyện Kiều verses
+        self.common_endings = ['ta', 'này', 'kia', 'đây', 'chi', 'sao', 'nào', 'thay', 
+                              'chăng', 'vay', 'thôi', 'rồi', 'ra', 'vào', 
+                              'ai', 'người', 'rằng', 'đà']
+        
+        # Patterns for lục bát structure
+        self.luc_bat_patterns = {
+            'luc': [None, 'flat', None, 'sharp', None, 'flat'],  # 6-syllable line
+            'bat': [None, 'flat', None, 'flat', None, 'sharp', None, 'flat']  # 8-syllable line
+        }
     
     def generate_verse(self, initial_phrase: str, max_length: int = 50, 
                       num_samples: int = 5) -> List[str]:
@@ -77,6 +109,29 @@ class KieuVerseGenerator:
                 
         return refined_verses
     
+    def get_syllable_tone(self, syllable: str) -> str:
+        """
+        Determine the tone group (flat or sharp) of a Vietnamese syllable
+        
+        Args:
+            syllable: A Vietnamese syllable
+            
+        Returns:
+            Tone group ('flat' or 'sharp')
+        """
+        syllable = syllable.lower()
+        
+        # Check for tone marks
+        for tone_name, tone_chars in self.tone_marks.items():
+            if any(char in syllable for char in tone_chars):
+                # Find which tone group this belongs to
+                for group, tones in self.tone_groups.items():
+                    if tone_name in tones:
+                        return group
+        
+        # Default to flat tone if no tone mark found
+        return 'flat'
+    
     def apply_poetic_constraints(self, verse: str) -> str:
         """
         Apply Vietnamese poetic structure constraints to the verse
@@ -89,36 +144,101 @@ class KieuVerseGenerator:
         """
         # 1. Clean up the verse
         verse = verse.strip()
-        
-        # 2. Ensure the verse ends with a comma or period
-        if not verse.endswith((',', '.', '?', '!')):
-            if len(verse) > 3 and verse[-1].isalpha():
-                verse += ','
-                
-        # 3. Apply 6-8 syllable constraint (typical for Truyện Kiều)
-        # Count Vietnamese syllables (approximately - each word is roughly a syllable)
-        words = verse.split()
-        
-        if len(words) < 4:
-            # Too short, not a valid verse
+        if not verse:
             return ""
             
-        if len(words) > 9:
-            # Too long, truncate to 8 syllables + punctuation
-            verse = ' '.join(words[:8])
-            
-            # Add ending punctuation
-            if not verse.endswith((',', '.', '?', '!')):
-                verse += ','
-                
-        # 4. Check for basic Vietnamese tonal patterns
-        # (simplified - a full implementation would be more complex)
+        # 2. Split into words/syllables
+        words = verse.split()
+        if len(words) < 4:
+            return ""  # Too short to be valid
         
+        # 3. Determine if this should be lục (6) or bát (8) based on content
+        # Use the first few words to decide
+        starting_words = ' '.join(words[:2]).lower()
+        if any(word in starting_words for word in ["trăm", "năm", "chữ", "một", "người", "tài"]):
+            target_length = 6  # Lục (six)
+            pattern = self.luc_bat_patterns['luc']
+        else:
+            target_length = 8  # Bát (eight)
+            pattern = self.luc_bat_patterns['bat']
+        
+        # 4. Adjust to target length
+        if len(words) > target_length:
+            # Keep the beginning and select appropriate words for the ending
+            # to better follow Vietnamese verse structure
+            if len(words) > target_length + 2:
+                # Take beginning and end, joining them coherently
+                words = words[:target_length-1] + [self._select_ending_word(words)]
+            else:
+                words = words[:target_length]
+                
+        # 5. Ensure proper ending punctuation
+        verse = ' '.join(words)
+        if not verse.endswith((',', '.', '?', '!')):
+            verse += ','
+            
+        # 6. Apply tone pattern adjustments if needed
+        # This is a simplification - a full implementation would require
+        # deeper linguistic processing
+        verse = self._adjust_tones(verse, pattern)
+            
         return verse
+    
+    def _select_ending_word(self, words: List[str]) -> str:
+        """Select an appropriate ending word for a verse"""
+        # Try to use an existing ending word from the original
+        for word in reversed(words):
+            if word.lower() in self.common_endings:
+                return word
+                
+        # Otherwise use a common ending
+        return np.random.choice(self.common_endings)
+    
+    def _adjust_tones(self, verse: str, pattern: List[Optional[str]]) -> str:
+        """
+        Attempt to adjust the verse to follow Vietnamese tonal patterns
+        This is a simplified approximation
+        """
+        words = verse.split()
+        
+        # If we don't have enough words to match the pattern, return as is
+        if len(words) < len(pattern):
+            return verse
+            
+        # Check if the verse already follows the pattern
+        matches_pattern = True
+        for i, tone in enumerate(pattern):
+            if i >= len(words) or tone is None:
+                continue
+                
+            if self.get_syllable_tone(words[i]) != tone:
+                matches_pattern = False
+                break
+                
+        # If it already matches, return as is
+        if matches_pattern:
+            return verse
+            
+        # Otherwise make minor adjustments - this is where more sophisticated
+        # linguistic processing would be needed for a full implementation
+        
+        # For simplicity, we'll just ensure the last syllable has the right tone
+        last_idx = len(pattern) - 1
+        if last_idx < len(words) and pattern[last_idx] == 'flat':
+            # For demonstration - a real implementation would need a dictionary
+            # of Vietnamese word alternatives with appropriate tones
+            if self.get_syllable_tone(words[last_idx]) != 'flat':
+                # Try to replace with a common flat-toned ending
+                flat_endings = [e for e in self.common_endings 
+                               if self.get_syllable_tone(e) == 'flat']
+                if flat_endings:
+                    words[last_idx] = np.random.choice(flat_endings)
+        
+        return ' '.join(words)
     
     def evaluate_verse_quality(self, verse: str) -> Dict[str, float]:
         """
-        Evaluate the quality of a generated verse
+        Evaluate the quality of a generated verse using enhanced metrics
         
         Args:
             verse: The verse to evaluate
@@ -130,7 +250,8 @@ class KieuVerseGenerator:
         scores = {
             'length': 0.0,  # Length appropriateness
             'structure': 0.0,  # Vietnamese poetic structure
-            'fluency': 0.0  # Language fluency
+            'fluency': 0.0,  # Language fluency
+            'tone_pattern': 0.0  # Vietnamese tone pattern adherence
         }
         
         # 1. Length score
@@ -158,8 +279,28 @@ class KieuVerseGenerator:
         else:
             scores['fluency'] = 0.5
             
+        # 4. Tone pattern score - NEW!
+        # Check if the verse follows Vietnamese tonal patterns
+        if len(words) == 6:  # lục
+            pattern = self.luc_bat_patterns['luc']
+        else:  # bát or other
+            pattern = self.luc_bat_patterns['bat']
+            
+        matches = 0
+        required_positions = [i for i, tone in enumerate(pattern) if tone is not None]
+        
+        for pos in required_positions:
+            if pos < len(words) and self.get_syllable_tone(words[pos]) == pattern[pos]:
+                matches += 1
+                
+        if required_positions:
+            scores['tone_pattern'] = matches / len(required_positions)
+        else:
+            scores['tone_pattern'] = 0.5
+            
         # Overall quality score
-        scores['overall'] = (scores['length'] + scores['structure'] + scores['fluency']) / 3
+        scores['overall'] = (scores['length'] + scores['structure'] + 
+                           scores['fluency'] + scores['tone_pattern']) / 4
         
         return scores
         
@@ -242,6 +383,22 @@ class KieuVerseGenerator:
             
         second_verse = second_verses[0]
         
+        # Ensure poetic connection between verses
+        first_words = first_verse.split()
+        second_words = second_verse.split()
+        
+        # For lục bát form, ensure proper structure:
+        # - If first verse has 6 syllables, second should have 8
+        # - If first verse has 8 syllables, second should have 6
+        if len(first_words) <= 6 and len(second_words) > 8:
+            second_verse = ' '.join(second_words[:8])
+        elif len(first_words) > 6 and len(second_words) > 6:
+            second_verse = ' '.join(second_words[:6])
+            
+        # Ensure ending punctuation
+        if not second_verse.endswith((',', '.', '?', '!')):
+            second_verse += '.'
+            
         return (first_verse, second_verse)
 
 
