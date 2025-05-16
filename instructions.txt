@@ -1,0 +1,29 @@
+#Classify whether its Nguyen Du verse
+
+python -m src.run_exact_classifier
+
+---------------------------------------------------------------------------------------------
+
+#Train model and search verse
+python app.py --data data/truyen_kieu.txt --stopwords data/vietnamese_stopwords.txt --model models/tfidf_model.pkl --mode train
+
+python app.py --data data/truyen_kieu.txt --stopwords data/vietnamese_stopwords.txt --model models/tfidf_model.pkl --mode search
+
+#New train and search verse all in one (working) 
+
+python app.py --data data/truyen_kieu.txt --stopwords data/vietnamese_stopwords.txt --tfidf-model models/tfidf_model.pkl --mode train-search
+
+---------------------------------------------------------------------------------------------------------------
+
+#Train lstm
+python app.py --mode train-language-model --cpu-lstm --language-model models/kieu_lstm.pkl
+
+#verse generating from given words using lstm
+python app.py --mode generate-verse --model-type lstm --prompt "Trăm năm" --num-samples 5 (not work)
+python app.py --mode generate-verse --model-type lstm --prompt "Thúy Kiều" --num-samples 5 --language-model models/kieu_lstm.pkl (worked)
+
+
+------------------------------------------------------------------------------------------------------------------
+
+#Image generating from given words
+python app.py --mode generate-image --verse "Vầng trăng vằng vặc giữa trời" --style traditional
