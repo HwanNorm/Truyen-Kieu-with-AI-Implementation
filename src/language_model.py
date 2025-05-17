@@ -380,6 +380,210 @@ class KieuLanguageModelTrainer:
         avg_loss = total_loss / len(dataloader)
         return avg_loss
     
+
+    def train_with_early_stopping(self, verses: List[str], epochs: int = 100, 
+                                batch_size: int = 128, learning_rate: float = 0.001,
+                                patience: int = 5, validation_split: float = 0.1):
+        """Train with early stopping based on validation loss"""
+        if self.model_type != 'lstm':
+            raise ValueError("This method is only for LSTM models")
+            
+        # Ensure we have a model and tokenizer
+        if self.model is None:
+            self.prepare_data(verses)
+        
+        # Split data into training and validation sets
+        import random
+        random.seed(42)  # For reproducibility
+        random.shuffle(verses)
+        split_idx = int(len(verses) * (1 - validation_split))
+        train_verses = verses[:split_idx]
+        val_verses = verses[split_idx:]
+        
+        print(f"Training on {len(train_verses)} verses, validating on {len(val_verses)} verses")
+        
+        # Device setup
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model.to(device)
+        
+        # Process training data
+        train_encoded = [self.tokenizer.encode(verse) for verse in train_verses]
+        train_inputs = []
+        train_targets = []
+        
+        for verse in train_encoded:
+            if len(verse) < 2:  # Skip very short verses
+                continue
+            train_inputs.append(verse[:-1])
+            train_targets.append(verse[1:])
+        
+        # Process validation data
+        val_encoded = [self.tokenizer.encode(verse) for verse in val_verses]
+        val_inputs = []
+        val_targets = []
+        
+        for verse in val_encoded:
+            if len(verse) < 2:  # Skip very short verses
+                continue
+            val_inputs.append(verse[:-1])
+            val_targets.append(verse[1:])
+        
+        # Create data loaders
+        from torch.utils.data import TensorDataset, DataLoader
+        from torch.nn.utils.rnn import pad_sequence
+        
+        # Pad sequences
+        train_padded_inputs = pad_sequence([torch.tensor(x) for x in train_inputs], 
+                                        batch_first=True, 
+                                        padding_value=self.tokenizer.pad_token_id)
+        train_padded_targets = pad_sequence([torch.tensor(x) for x in train_targets], 
+                                        batch_first=True, 
+                                        padding_value=self.tokenizer.pad_token_id)
+        
+        val_padded_inputs = pad_sequence([torch.tensor(x) for x in val_inputs], 
+                                        batch_first=True, 
+                                        padding_value=self.tokenizer.pad_token_id)
+        val_padded_targets = pad_sequence([torch.tensor(x) for x in val_targets], 
+                                        batch_first=True, 
+                                        padding_value=self.tokenizer.pad_token_id)
+        
+        train_dataset = TensorDataset(train_padded_inputs, train_padded_targets)
+        val_dataset = TensorDataset(val_padded_inputs, val_padded_targets)
+        
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+        
+        # Setup training
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
+        criterion = torch.nn.CrossEntropyLoss(ignore_index=self.tokenizer.pad_token_id)
+        
+        # Early stopping variables
+        best_val_loss = float('inf')
+        best_model = None
+        patience_counter = 0
+        
+        # Training loop with early stopping
+        for epoch in range(epochs):
+            # Train for one epoch
+            self.model.train()
+            train_loss = 0
+            
+            for batch_inputs, batch_targets in train_loader:
+                batch_inputs = batch_inputs.to(device)
+                batch_targets = batch_targets.to(device)
+                
+                # Zero gradients
+                optimizer.zero_grad()
+                
+                # Forward pass
+                output, _ = self.model(batch_inputs)
+                
+                # Reshape for loss calculation
+                output = output.view(-1, self.tokenizer.vocab_size)
+                batch_targets = batch_targets.view(-1)
+                
+                # Calculate loss
+                loss = criterion(output, batch_targets)
+                
+                # Backward pass
+                loss.backward()
+                
+                # Update weights
+                optimizer.step()
+                
+                train_loss += loss.item()
+            
+            avg_train_loss = train_loss / len(train_loader)
+            
+            # Validate
+            self.model.eval()
+            val_loss = 0
+            
+            with torch.no_grad():
+                for batch_inputs, batch_targets in val_loader:
+                    batch_inputs = batch_inputs.to(device)
+                    batch_targets = batch_targets.to(device)
+                    
+                    # Forward pass
+                    output, _ = self.model(batch_inputs)
+                    
+                    # Reshape for loss calculation
+                    output = output.view(-1, self.tokenizer.vocab_size)
+                    batch_targets = batch_targets.view(-1)
+                    
+                    # Calculate loss
+                    loss = criterion(output, batch_targets)
+                    val_loss += loss.item()
+            
+            avg_val_loss = val_loss / len(val_loader)
+            
+            print(f"Epoch {epoch+1}/{epochs}, Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}")
+            
+            # Check if this is the best model
+            if avg_val_loss < best_val_loss:
+                best_val_loss = avg_val_loss
+                best_model = {
+                    'model_state_dict': self.model.state_dict(),
+                    'tokenizer': {
+                        'char_to_idx': self.tokenizer.char_to_idx,
+                        'idx_to_char': self.tokenizer.idx_to_char,
+                        'vocab_size': self.tokenizer.vocab_size,
+                        'pad_token_id': self.tokenizer.pad_token_id,
+                        'unk_token_id': self.tokenizer.unk_token_id,
+                        'start_token_id': self.tokenizer.start_token_id,
+                        'end_token_id': self.tokenizer.end_token_id
+                    },
+                    'params': {
+                        'embedding_dim': self.embedding_dim,
+                        'hidden_dim': self.hidden_dim,
+                        'num_layers': self.num_layers,
+                        'dropout': self.dropout
+                    },
+                    'epoch': epoch,
+                    'train_loss': avg_train_loss,
+                    'val_loss': avg_val_loss
+                }
+                patience_counter = 0
+            else:
+                patience_counter += 1
+                
+            # Check early stopping condition
+            if patience_counter >= patience:
+                print(f"Early stopping triggered after {epoch+1} epochs")
+                break
+        
+        # Load the best model
+        if best_model:
+            self.model.load_state_dict(best_model['model_state_dict'])
+            print(f"Loaded best model from epoch {best_model['epoch']+1} with validation loss {best_model['val_loss']:.4f}")
+            
+            # Return best model state for saving
+            return best_model
+        
+        return None
+
+    def generate_with_postprocessing(self, start_text: str, max_length: int = 100) -> str:
+        """Generate text and apply Vietnamese poetic post-processing"""
+        # Generate raw text with the model
+        raw_text = self.generate(start_text, max_length)
+        
+        # If raw_text is too short, return as is
+        if len(raw_text) < 10:
+            return raw_text
+        
+        # Import the post-processor
+        from .verse_generator import KieuVerseGenerator
+        
+        # Create a temporary generator that we'll use just for post-processing
+        # We don't need to load a model since we'll only use the post-processing methods
+        verse_generator = object.__new__(KieuVerseGenerator)
+        verse_generator._init_vietnamese_resources()
+        
+        # Apply poetic constraints
+        processed_text = verse_generator.apply_poetic_constraints(raw_text)
+        
+        return processed_text
+    
     def generate(self, start_text: str, max_length: int = 100) -> str:
         """Generate text using the trained model"""
         if self.model is None:
