@@ -64,9 +64,29 @@ def main():
     parser.add_argument('--top-k', type=int, default=5,
                         help='Number of top results to return')
     
-    #LSTM parameters
+    # LSTM parameters
     parser.add_argument('--cpu-lstm', action='store_true',
-                   help='Train an LSTM model optimized for CPU usage')
+                       help='Train an LSTM model optimized for CPU usage')
+    parser.add_argument('--early-stopping', action='store_true',
+                       help='Train LSTM with early stopping to prevent overfitting')
+    parser.add_argument('--post-process', action='store_true',
+                       help='Apply Vietnamese poetic post-processing to generated verses')
+    
+    # Additional LSTM hyperparameters
+    parser.add_argument('--embedding-dim', type=int, default=256,
+                       help='Embedding dimension for LSTM model')
+    parser.add_argument('--hidden-dim', type=int, default=512,
+                       help='Hidden dimension for LSTM model')
+    parser.add_argument('--num-layers', type=int, default=2,
+                       help='Number of LSTM layers')
+    parser.add_argument('--batch-size', type=int, default=128,
+                       help='Batch size for training')
+    parser.add_argument('--epochs', type=int, default=200,
+                       help='Maximum number of training epochs')
+    parser.add_argument('--patience', type=int, default=10,
+                       help='Early stopping patience')
+    parser.add_argument('--learning-rate', type=float, default=0.001,
+                       help='Learning rate for training')
     
     # Parse arguments
     args = parser.parse_args()
@@ -151,7 +171,11 @@ def run_train_language_model(args, verses):
     # If CPU-optimized LSTM is requested
     if args.cpu_lstm:
         args.model_type = 'lstm'  # Ensure model type is lstm
-        return run_cpu_optimized_lstm(args, verses)
+        if args.early_stopping:
+            return run_cpu_optimized_lstm_with_early_stopping(args, verses)
+        else:
+            return run_cpu_optimized_lstm(args, verses)
+    
     print(f"Training {args.model_type.upper()} language model...")
     
     # Initialize trainer
@@ -192,22 +216,44 @@ def run_train_language_model(args, verses):
 def run_generate_verse(args):
     """Generate verses using a trained language model"""
     # Check if model exists
-    if not os.path.exists(args.language_model):
-        print(f"Error: Model file {args.language_model} not found.")
+    model_path = args.language_model
+    
+    # If no model path is specified, use the default matching the model type
+    if model_path is None or "ngram" in model_path and args.model_type == "lstm":
+        if args.model_type == "lstm":
+            model_path = "models/kieu_lstm.pkl"
+        else:
+            model_path = "models/kieu_ngram.pkl"
+    
+    if not os.path.exists(model_path):
+        print(f"Error: Model file {model_path} not found.")
         print("Please train a model first using --mode train-language-model")
         return
     
     try:
         # Load the verse generator
-        print(f"Loading {args.model_type} model from {args.language_model}")
-        generator = KieuVerseGenerator(args.language_model, args.model_type)
+        print(f"Loading {args.model_type} model from {model_path}")
+        generator = KieuVerseGenerator(model_path, args.model_type)
         
         # Generate verses
         if args.prompt:
             print(f"Generating verses from: '{args.prompt}'")
-            verses = generator.generate_verse(args.prompt, 
-                                             max_length=args.max_length, 
-                                             num_samples=args.num_samples)
+            
+            # Apply post-processing if requested
+            if args.post_process:
+                # Use language model directly for post-processing
+                from src.language_model import KieuLanguageModelTrainer
+                
+                trainer = KieuLanguageModelTrainer.load(model_path, args.model_type)
+                verses = []
+                
+                for _ in range(args.num_samples):
+                    processed_verse = trainer.generate_with_postprocessing(args.prompt, max_length=args.max_length)
+                    verses.append(processed_verse)
+            else:
+                verses = generator.generate_verse(args.prompt, 
+                                               max_length=args.max_length, 
+                                               num_samples=args.num_samples)
             
             if verses:
                 print("\nGenerated verses:")
@@ -232,9 +278,20 @@ def run_generate_verse(args):
                 if prompt.lower() == 'quit':
                     break
                 
-                verses = generator.generate_verse(prompt, 
-                                                max_length=args.max_length, 
-                                                num_samples=args.num_samples)
+                if args.post_process:
+                    # Use language model directly for post-processing
+                    from src.language_model import KieuLanguageModelTrainer
+                    
+                    trainer = KieuLanguageModelTrainer.load(model_path, args.model_type)
+                    verses = []
+                    
+                    for _ in range(args.num_samples):
+                        processed_verse = trainer.generate_with_postprocessing(prompt, max_length=args.max_length)
+                        verses.append(processed_verse)
+                else:
+                    verses = generator.generate_verse(prompt, 
+                                                    max_length=args.max_length, 
+                                                    num_samples=args.num_samples)
                 
                 if verses:
                     print("\nGenerated verses:")
@@ -357,7 +414,6 @@ def run_image_to_verse(args, verses):
         print(f"Error: {e}")
         print("Please install the required packages: pip install transformers torch")
 
-
 def run_cpu_optimized_lstm(args, verses):
     """Train an LSTM model optimized for CPU usage"""
     from src.language_model import KieuLanguageModelTrainer
@@ -366,24 +422,27 @@ def run_cpu_optimized_lstm(args, verses):
     print("Training CPU-optimized LSTM model...")
     print("Note: This may take 30-60 minutes on a laptop without GPU")
     
+    # Get hyperparameters from args
+    embedding_dim = args.embedding_dim
+    hidden_dim = args.hidden_dim
+    num_layers = args.num_layers
+    batch_size = args.batch_size
+    epochs = args.epochs
+    learning_rate = args.learning_rate
+    
     # CPU-optimized hyperparameters
     trainer = KieuLanguageModelTrainer(
         model_type='lstm',
-        embedding_dim=128,    # Reduced from 256
-        hidden_dim=256,      # Reduced from 512
-        num_layers=2,        # Reduced from 2
+        embedding_dim=embedding_dim,
+        hidden_dim=hidden_dim,
+        num_layers=num_layers,
         dropout=0.2
     )
     
-    # Use smaller batch size and fewer epochs for CPU
-    batch_size = 128          # Reduced from 32
-    epochs = 100               # Reduced from 5
-    learning_rate = 0.001
-    
     print(f"Using CPU-optimized parameters:")
-    print(f"  - Embedding dimension: 64")
-    print(f"  - Hidden dimension: 128")
-    print(f"  - LSTM layers: 1")
+    print(f"  - Embedding dimension: {embedding_dim}")
+    print(f"  - Hidden dimension: {hidden_dim}")
+    print(f"  - LSTM layers: {num_layers}")
     print(f"  - Batch size: {batch_size}")
     print(f"  - Epochs: {epochs}")
     
@@ -405,7 +464,7 @@ def run_cpu_optimized_lstm(args, verses):
         trainer.train(verses, epochs=epochs, batch_size=batch_size, learning_rate=learning_rate)
     
     # Save model
-    model_path = args.language_model.replace('ngram', 'lstm')
+    model_path = args.language_model
     trainer.save(model_path)
     print(f"LSTM model saved to {model_path}")
     
@@ -418,6 +477,85 @@ def run_cpu_optimized_lstm(args, verses):
         print(f"Generated: '{generated}'\n")
     
     return model_path
+
+def run_cpu_optimized_lstm_with_early_stopping(args, verses):
+    """Train an LSTM model with early stopping for better results"""
+    from src.language_model import KieuLanguageModelTrainer
+    import torch
+    
+    print("Training CPU-optimized LSTM model with early stopping...")
+    print("Note: This may take several hours on a laptop without GPU")
+    
+    # Get hyperparameters from args
+    embedding_dim = args.embedding_dim
+    hidden_dim = args.hidden_dim
+    num_layers = args.num_layers
+    batch_size = args.batch_size
+    epochs = args.epochs
+    patience = args.patience
+    learning_rate = args.learning_rate
+    
+    # CPU-optimized hyperparameters
+    trainer = KieuLanguageModelTrainer(
+        model_type='lstm',
+        embedding_dim=embedding_dim,
+        hidden_dim=hidden_dim,
+        num_layers=num_layers,
+        dropout=0.2
+    )
+    
+    print(f"Using CPU-optimized parameters with early stopping:")
+    print(f"  - Embedding dimension: {embedding_dim}")
+    print(f"  - Hidden dimension: {hidden_dim}")
+    print(f"  - LSTM layers: {num_layers}")
+    print(f"  - Batch size: {batch_size}")
+    print(f"  - Max epochs: {epochs}")
+    print(f"  - Early stopping patience: {patience}")
+    
+    # Train with progress reporting
+    try:
+        from tqdm import tqdm
+        
+        # Prepare data first to show progress
+        print("Preparing training data...")
+        trainer.prepare_data(verses)
+        
+        # Train with early stopping
+        print("Starting training with early stopping...")
+        best_model = trainer.train_with_early_stopping(
+            verses, 
+            epochs=epochs, 
+            batch_size=batch_size, 
+            learning_rate=learning_rate,
+            patience=patience
+        )
+        
+        if best_model:
+            # Save the best model
+            torch.save(best_model, args.language_model)
+            print(f"Best model saved to {args.language_model}")
+        
+    except ImportError:
+        print("tqdm package not available, training without progress bar")
+        best_model = trainer.train_with_early_stopping(
+            verses, 
+            epochs=epochs, 
+            batch_size=batch_size, 
+            learning_rate=learning_rate,
+            patience=patience
+        )
+        if best_model:
+            torch.save(best_model, args.language_model)
+    
+    # Test generation with post-processing
+    print("\nTesting LSTM model with sample generation and post-processing:")
+    prompts = ["Trăm năm", "Tình duyên", "Hồng nhan"]
+    for prompt in prompts:
+        generated = trainer.generate_with_postprocessing(prompt, max_length=50)
+        print(f"Prompt: '{prompt}'")
+        print(f"Generated: '{generated}'\n")
+    
+    return args.language_model
 
 if __name__ == "__main__":
     main()
