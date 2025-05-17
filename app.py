@@ -128,7 +128,6 @@ def main():
             if ":" not in model_name:
                 model_name = f"{model_name}:latest"
 
-            model_name = args.ollama_model
             generator = OllamaKieuGenerator(
                 model_name=model_name,
                 truyen_kieu_path=args.data
