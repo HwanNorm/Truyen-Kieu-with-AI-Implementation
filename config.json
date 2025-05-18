@@ -1,0 +1,12 @@
+{
+  "image_to_verse": {
+    "clip_model": "openai/clip-vit-base-patch32",
+    "top_k": 5,
+    "boost_factors": {
+      "hoa": 1.5,
+      "trăng": 1.3,
+      "mây": 1.2
+    },
+    "feedback_file": "feedback_data.json"
+  }
+}
