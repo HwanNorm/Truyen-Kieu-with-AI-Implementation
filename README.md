@@ -2,7 +2,6 @@
 
 ![Vietnamese Literature AI](https://img.shields.io/badge/vietnamese-literature-green)
 ![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)
-![License MIT](https://img.shields.io/badge/license-MIT-yellow.svg)
 
 This project implements various AI techniques to analyze, understand, and generate content related to Truyện Kiều, the most significant work in Vietnamese literature.
 
