@@ -159,7 +159,7 @@ Output:
 ...
 ```
 
-### Generate a verse starting with "Trăm năm":
+### Generate a verse starting with "Thúy Kiều":
 
 ```bash
 python app.py --mode ollama-verse --prompt "Trăm năm"
@@ -168,10 +168,14 @@ python app.py --mode ollama-verse --prompt "Trăm năm"
 Output:
 ```
 === Generated Verse ===
-Trăm năm trong cõi người ta,
-Chữ tình chữ nghĩa đôi ba mối sầu.
-Duyên kia hồng phận bạc màu,
-Trăng tà gió lạnh biết đâu là nhà.
+Thúy Kiều là đóa hoa kiếp,
+Sắc sảo khôn ngoan trong tâm hồn tình;
+Trên đường tình duyên cô đơn,
+Mặc mặc lặng lẽ không cần người xa;
+Tình yêu buồn bã như gió,
+Làm lòng người đau thương sâu hồng nhan;
+Đôi mắt rạng rỡ như vàng,
+Cầu mong muốn được gần nhau chữ tình.
 ```
 
 
