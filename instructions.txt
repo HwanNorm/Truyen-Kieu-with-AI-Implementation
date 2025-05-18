@@ -5,9 +5,9 @@ python -m src.run_exact_classifier
 ---------------------------------------------------------------------------------------------
 
 #Train model and search verse
-python app.py --data data/truyen_kieu.txt --stopwords data/vietnamese_stopwords.txt --model models/tfidf_model.pkl --mode train
+python app.py --data data/truyen_kieu.txt --stopwords data/vietnamese_stopwords.txt --tfidf-model models/tfidf_model.pkl --mode train      
 
-python app.py --data data/truyen_kieu.txt --stopwords data/vietnamese_stopwords.txt --model models/tfidf_model.pkl --mode search
+python app.py --data data/truyen_kieu.txt --stopwords data/vietnamese_stopwords.txt --tfidf-model models/tfidf_model.pkl --mode search      
 
 #New train and search verse all in one (working) 
 
