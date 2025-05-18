@@ -162,7 +162,7 @@ Output:
 ### Generate a verse starting with "Thúy Kiều":
 
 ```bash
-python app.py --mode ollama-verse --prompt "Trăm năm"
+python app.py --mode ollama-verse --prompt "Thúy Kiều"
 ```
 
 Output:
